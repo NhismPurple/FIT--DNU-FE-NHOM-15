@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="ArtGallery Admin — Quản lý tác phẩm nghệ thuật. Thêm, sửa, xóa và duyệt tác phẩm.">
+    <title>ArtGallery — Bảng Quản Trị</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="admin-page">
+
+    <div class="admin-wrapper">
+
+        <!-- ═══ Sidebar ═══ -->
+        <aside class="admin-sidebar" id="admin-sidebar">
+            <div class="sidebar-brand">
+                <div class="sidebar-brand-icon">
+                    <i class="bi bi-palette2"></i>
+                </div>
+                <div>
+                    <h5>ArtGallery</h5>
+                    <small>Admin Panel</small>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="sidebar-nav-label">Điều hướng</div>
+                <a href="admin.html" class="sidebar-nav-link active">
+                    <i class="bi bi-speedometer2"></i> Dashboard
+                </a>
+                <a href="#artworks-table-section" class="sidebar-nav-link">
+                    <i class="bi bi-easel"></i> Tác phẩm
+                </a>
+                <a href="#form-section" class="sidebar-nav-link">
+                    <i class="bi bi-plus-square"></i> Thêm mới
+                </a>
+
+                <div class="sidebar-nav-label mt-3">Khác</div>
+                <a href="index.html" class="sidebar-nav-link">
+                    <i class="bi bi-house-door"></i> Xem Gallery
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <i class="bi bi-code-slash me-1"></i> ArtGallery v1.0
+            </div>
+        </aside>
+
+        <!-- Sidebar overlay for mobile -->
+        <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+        <!-- ═══ Main Content ═══ -->
+        <main class="admin-main">
+
+            <!-- ── Header ── -->
+            <header class="admin-header">
+                <div class="d-flex align-items-center gap-3">
+                    <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar menu">
+                        <i class="bi bi-list"></i>
+                    </button>
+                    <h4><i class="bi bi-speedometer2 me-2"></i> Dashboard</h4>
+                </div>
+                <div class="admin-header-actions">
+                    <a href="index.html" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-eye me-1"></i> Xem Gallery
+                    </a>
+                    <button onclick="logoutAdmin()" class="btn btn-sm btn-outline-danger" title="Logout">
+                        <i class="bi bi-box-arrow-right me-1"></i> Đăng xuất
+                    </button>
+                </div>
+            </header>
+
+            <!-- ── Alerts Container ── -->
+            <div id="admin-alerts" class="admin-alerts-container"></div>
+
+            <div class="admin-content">
+
+                <!-- ══ Statistics Section ══ -->
+                <div class="row g-3 mb-4">
+                    <div class="col-6 col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-icon blue">
+                                <i class="bi bi-easel-fill"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="stat-total">0</h3>
+                                <p>Tổng tác phẩm</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-icon green">
+                                <i class="bi bi-check-circle-fill"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="stat-approved">0</h3>
+                                <p>Đã duyệt</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-icon warning">
+                                <i class="bi bi-hourglass-split"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="stat-pending">0</h3>
+                                <p>Chờ duyệt</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-icon red">
+                                <i class="bi bi-heart-fill"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="stat-likes">0</h3>
+                                <p>Lượt thích</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-4">
+                    <!-- ══ Add / Edit Form ══ -->
+                    <div class="col-lg-4" id="form-section">
+                        <div class="panel-card">
+                            <div class="panel-card-header">
+                                <h5 id="form-title">
+                                    <i class="bi bi-plus-circle text-primary"></i> Thêm tác phẩm mới
+                                </h5>
+                            </div>
+                            <div class="panel-card-body">
+                                <form id="artwork-form" class="admin-form" novalidate>
+                                    <!-- Title -->
+                                    <div class="mb-3">
+                                        <label for="input-title" class="form-label">Tiêu đề <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="input-title" placeholder="Nhập tiêu đề tác phẩm">
+                                    </div>
+
+                                    <!-- Artist -->
+                                    <div class="mb-3">
+                                        <label for="input-artist" class="form-label">Nghệ sĩ <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="input-artist" placeholder="Nhập tên nghệ sĩ">
+                                    </div>
+
+                                    <!-- Style -->
+                                    <div class="mb-3">
+                                        <label for="input-style" class="form-label">Phong cách</label>
+                                        <select class="form-select" id="input-style">
+                                            <option value="Sơn dầu">Sơn dầu</option>
+                                            <option value="Màu nước">Màu nước</option>
+                                            <option value="Trừu tượng">Trừu tượng</option>
+                                            <option value="Canvas">Canvas</option>
+                                            <option value="Hiện đại">Hiện đại</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Story -->
+                                    <div class="mb-3">
+                                        <label for="input-story" class="form-label">Cốt truyện / Mô tả</label>
+                                        <textarea class="form-control" id="input-story" rows="3" placeholder="Nhập cốt truyện hoặc thông điệp của tác phẩm..."></textarea>
+                                    </div>
+
+                                    <!-- Image URL -->
+                                    <div class="mb-3">
+                                        <label for="input-imageUrl" class="form-label">URL Hình ảnh <span class="text-danger">*</span></label>
+                                        <input type="url" class="form-control" id="input-imageUrl" placeholder="https://example.com/image.jpg">
+                                    </div>
+
+                                    <!-- Approved -->
+                                    <div class="mb-4">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="input-approved" checked>
+                                            <label class="form-check-label" for="input-approved">Duyệt hiển thị</label>
+                                        </div>
+                                    </div>
+
+                                    <!-- Submit Buttons -->
+                                    <div class="d-flex gap-2">
+                                        <button type="submit" class="btn btn-primary flex-grow-1" id="btn-submit">
+                                            <i class="bi bi-plus-circle me-1"></i> Thêm tác phẩm
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-cancel-edit-hidden" id="btn-cancel-edit">
+                                            <i class="bi bi-x-lg"></i> Hủy
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ══ Artworks Table ══ -->
+                    <div class="col-lg-8" id="artworks-table-section">
+                        <div class="panel-card">
+                            <div class="panel-card-header">
+                                <h5><i class="bi bi-table text-primary"></i> Danh sách tác phẩm</h5>
+                            </div>
+
+                            <!-- Table Loading -->
+                            <div class="table-loading" id="table-loading">
+                                <div class="spinner-border" role="status">
+                                    <span class="visually-hidden">Đang tải...</span>
+                                </div>
+                                <p class="mt-2 text-muted">Đang tải dữ liệu...</p>
+                            </div>
+
+                            <!-- Table Container -->
+                            <div id="table-container" class="table-container-hidden">
+                                <div class="table-responsive">
+                                    <table class="admin-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Ảnh</th>
+                                                <th>Tiêu đề</th>
+                                                <th>Nghệ sĩ</th>
+                                                <th>Phong cách</th>
+
+                                                <th>Lượt thích</th>
+                                                <th>Trạng thái</th>
+                                                <th>Thao tác</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="artworks-tbody">
+                                            <!-- Table rows rendered by admin.js -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ═══ Scripts ═══ -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/admin.js"></script>
+
+    <!-- Admin Authentication -->
+    <script>
+        // Check if admin is logged in on page load
+        if (!auth.isAdminLoggedIn()) {
+            window.location.href = 'admin-login.html';
+        }
+
+        // Logout admin function
+        function logoutAdmin() {
+            if (confirm('Bạn chắc chắn muốn đăng xuất?')) {
+                auth.logoutAdmin();
+                window.location.href = 'admin-login.html';
+            }
+        }
+    </script>
+
+    <!-- Sidebar toggle script (inline, small utility) -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var toggle = document.getElementById('sidebar-toggle');
+            var sidebar = document.getElementById('admin-sidebar');
+            var overlay = document.getElementById('sidebar-overlay');
+
+            if (toggle && sidebar && overlay) {
+                toggle.addEventListener('click', function () {
+                    sidebar.classList.toggle('show');
+                    overlay.classList.toggle('show');
+                });
+
+                overlay.addEventListener('click', function () {
+                    sidebar.classList.remove('show');
+                    overlay.classList.remove('show');
+                });
+            }
+        });
+    </script>
+</body>
+</html>
