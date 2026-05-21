@@ -1,26 +1,60 @@
 /**
- * admin.js — Logic for admin.html (Admin Panel)
- * Artwork CRUD operations, table rendering, form handling, statistics
+ * admin.js — Admin Panel Logic
+ * Includes: Artwork CRUD, Statistics, and Submission Review
  */
 
 var adminArtworks = [];
-var editingId = null; // Track if we're editing an artwork
+var editingId = null;
 
-/**
- * Initialize the admin panel
- */
+/* ══════════════════════════════════════
+   INIT
+══════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', function () {
     loadArtworks();
     setupFormHandler();
     setupCancelEdit();
+    loadSubmissions();
+    setupAdminTabs();
 });
 
-/**
- * Load all artworks from API and render table + stats
- */
+/* ══════════════════════════════════════
+   TAB NAVIGATION
+══════════════════════════════════════ */
+function setupAdminTabs() {
+    document.querySelectorAll('.sidebar-nav-link[data-tab]').forEach(function (link) {
+        link.addEventListener('click', function (e) {
+            e.preventDefault();
+            var tab = this.getAttribute('data-tab');
+            switchAdminTab(tab);
+        });
+    });
+}
+
+function switchAdminTab(tab) {
+    // Update sidebar active link
+    document.querySelectorAll('.sidebar-nav-link[data-tab]').forEach(l => l.classList.remove('active'));
+    var activeLink = document.querySelector('.sidebar-nav-link[data-tab="' + tab + '"]');
+    if (activeLink) activeLink.classList.add('active');
+
+    // Show/hide sections
+    var artworksSection = document.getElementById('artworks-section');
+    var submissionsSection = document.getElementById('submissions-section');
+
+    if (tab === 'submissions') {
+        if (artworksSection) artworksSection.style.display = 'none';
+        if (submissionsSection) submissionsSection.style.display = 'block';
+        loadSubmissions();
+    } else {
+        if (artworksSection) artworksSection.style.display = 'block';
+        if (submissionsSection) submissionsSection.style.display = 'none';
+    }
+}
+
+/* ══════════════════════════════════════
+   ARTWORKS (existing CRUD)
+══════════════════════════════════════ */
 function loadArtworks() {
     showTableLoading(true);
-
     API.getArtworks()
         .then(function (data) {
             adminArtworks = data;
@@ -35,10 +69,6 @@ function loadArtworks() {
         });
 }
 
-/**
- * Render the artworks table
- * @param {Array} artworks - Array of artwork objects
- */
 function renderTable(artworks) {
     var tbody = document.getElementById('artworks-tbody');
     if (!tbody) return;
@@ -50,8 +80,7 @@ function renderTable(artworks) {
     }
 
     var html = '';
-    for (var i = 0; i < artworks.length; i++) {
-        var artwork = artworks[i];
+    artworks.forEach(function (artwork) {
         var imgUrl = getImageUrl(artwork.imageUrl, artwork.id);
         var isApproved = artwork.status === 'approved' || artwork.approved === true;
         var statusText = isApproved ? 'approved' : 'pending';
@@ -69,67 +98,36 @@ function renderTable(artworks) {
         html += '    </button>';
         html += '  </td>';
         html += '  <td>';
-        html += '    <button class="btn btn-sm btn-outline-primary me-1 btn-edit" data-id="' + artwork.id + '" title="Chỉnh sửa">';
-        html += '      <i class="bi bi-pencil-fill"></i>';
-        html += '    </button>';
-        html += '    <button class="btn btn-sm btn-outline-danger btn-delete" data-id="' + artwork.id + '" title="Xóa">';
-        html += '      <i class="bi bi-trash-fill"></i>';
-        html += '    </button>';
+        html += '    <button class="btn btn-sm btn-outline-primary me-1 btn-edit" data-id="' + artwork.id + '" title="Chỉnh sửa"><i class="bi bi-pencil-fill"></i></button>';
+        html += '    <button class="btn btn-sm btn-outline-danger btn-delete" data-id="' + artwork.id + '" title="Xóa"><i class="bi bi-trash-fill"></i></button>';
         html += '  </td>';
         html += '</tr>';
-    }
+    });
 
     tbody.innerHTML = html;
-
-    // Attach event listeners for edit, delete, and approve buttons
     setupTableActions();
 }
 
-/**
- * Set up event listeners for table action buttons
- */
 function setupTableActions() {
-    // Edit buttons
-    var editBtns = document.querySelectorAll('.btn-edit');
-    for (var i = 0; i < editBtns.length; i++) {
-        editBtns[i].addEventListener('click', function () {
-            var id = this.getAttribute('data-id');
-            startEdit(id);
+    document.querySelectorAll('.btn-edit').forEach(function (btn) {
+        btn.addEventListener('click', function () { startEdit(this.getAttribute('data-id')); });
+    });
+    document.querySelectorAll('.btn-delete').forEach(function (btn) {
+        btn.addEventListener('click', function () { deleteArtwork(this.getAttribute('data-id')); });
+    });
+    document.querySelectorAll('.approve-toggle').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            toggleApproval(this.getAttribute('data-id'), this.getAttribute('data-status'));
         });
-    }
-
-    // Delete buttons
-    var deleteBtns = document.querySelectorAll('.btn-delete');
-    for (var j = 0; j < deleteBtns.length; j++) {
-        deleteBtns[j].addEventListener('click', function () {
-            var id = this.getAttribute('data-id');
-            deleteArtwork(id);
-        });
-    }
-
-    // Approve toggle buttons
-    var approveBtns = document.querySelectorAll('.approve-toggle');
-    for (var k = 0; k < approveBtns.length; k++) {
-        approveBtns[k].addEventListener('click', function () {
-            var id = this.getAttribute('data-id');
-            var currentStatus = this.getAttribute('data-status');
-            toggleApproval(id, currentStatus);
-        });
-    }
+    });
 }
 
-/**
- * Set up the add/edit form handler
- */
 function setupFormHandler() {
     var form = document.getElementById('artwork-form');
     if (!form) return;
-
     form.addEventListener('submit', function (e) {
         e.preventDefault();
         clearErrors();
-
-        // Collect form data
         var formData = {
             title: document.getElementById('input-title').value,
             artist: document.getElementById('input-artist').value,
@@ -138,49 +136,28 @@ function setupFormHandler() {
             imageUrl: document.getElementById('input-imageUrl').value,
             status: document.getElementById('input-approved').checked ? 'approved' : 'pending'
         };
-
-        // Validate
         var validation = validateForm(formData);
-
         if (!validation.valid) {
-            // Show errors
             if (validation.errors.title) showInlineError('input-title', validation.errors.title);
             if (validation.errors.artist) showInlineError('input-artist', validation.errors.artist);
             if (validation.errors.imageUrl) showInlineError('input-imageUrl', validation.errors.imageUrl);
             return;
         }
-
-
-        // Show loading on submit button
         setSubmitLoading(true);
-
         if (editingId) {
-            // Update existing artwork
             updateArtwork(editingId, formData);
         } else {
-            // Add new artwork
             formData.likes = 0;
             addArtwork(formData);
         }
     });
 }
 
-/**
- * Set up cancel edit button
- */
 function setupCancelEdit() {
     var cancelBtn = document.getElementById('btn-cancel-edit');
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', function () {
-            resetForm();
-        });
-    }
+    if (cancelBtn) cancelBtn.addEventListener('click', resetForm);
 }
 
-/**
- * Add a new artwork via POST
- * @param {Object} data - Artwork data
- */
 function addArtwork(data) {
     API.createArtwork(data)
         .then(function (created) {
@@ -188,254 +165,247 @@ function addArtwork(data) {
             resetForm();
             loadArtworks();
         })
-        .catch(function (error) {
-            showAdminAlert('Lỗi khi thêm tác phẩm. Vui lòng thử lại.', 'danger');
-            console.error('addArtwork error:', error);
-        })
-        .finally(function () {
-            setSubmitLoading(false);
-        });
+        .catch(function () { showAdminAlert('Lỗi khi thêm tác phẩm.', 'danger'); })
+        .finally(function () { setSubmitLoading(false); });
 }
 
-/**
- * Update an existing artwork via PUT
- * @param {string|number} id
- * @param {Object} data - Updated fields
- */
 function updateArtwork(id, data) {
     API.updateArtwork(id, data)
         .then(function (updated) {
-            showAdminAlert('Đã cập nhật tác phẩm "' + updated.title + '" thành công!', 'success');
+            showAdminAlert('Đã cập nhật "' + updated.title + '" thành công!', 'success');
             resetForm();
             loadArtworks();
         })
-        .catch(function (error) {
-            showAdminAlert('Lỗi khi cập nhật tác phẩm. Vui lòng thử lại.', 'danger');
-            console.error('updateArtwork error:', error);
-        })
-        .finally(function () {
-            setSubmitLoading(false);
-        });
+        .catch(function () { showAdminAlert('Lỗi khi cập nhật.', 'danger'); })
+        .finally(function () { setSubmitLoading(false); });
 }
 
-/**
- * Delete an artwork after confirmation
- * @param {string|number} id
- */
 function deleteArtwork(id) {
-    // Find artwork title for confirmation message
-    var artwork = null;
-    for (var i = 0; i < adminArtworks.length; i++) {
-        if (String(adminArtworks[i].id) === String(id)) {
-            artwork = adminArtworks[i];
-            break;
-        }
-    }
-
+    var artwork = adminArtworks.find(a => String(a.id) === String(id));
     var title = artwork ? artwork.title : 'tác phẩm này';
-    if (!confirm('Bạn có chắc chắn muốn xóa "' + title + '"?')) {
-        return;
-    }
+    if (!confirm('Bạn có chắc muốn xóa "' + title + '"?')) return;
 
-    // Optimistic removal from DOM
     var row = document.querySelector('tr[data-id="' + id + '"]');
-    if (row) {
-        row.classList.add('fade-out');
-    }
+    if (row) row.classList.add('fade-out');
 
     API.deleteArtwork(id)
         .then(function () {
             showAdminAlert('Đã xóa tác phẩm thành công!', 'success');
-            // Remove from local data
-            adminArtworks = adminArtworks.filter(function (a) {
-                return String(a.id) !== String(id);
-            });
+            adminArtworks = adminArtworks.filter(a => String(a.id) !== String(id));
             renderTable(adminArtworks);
             updateStatistics(adminArtworks);
-
-            // If we were editing this artwork, reset form
-            if (String(editingId) === String(id)) {
-                resetForm();
-            }
+            if (String(editingId) === String(id)) resetForm();
         })
-        .catch(function (error) {
+        .catch(function () {
             if (row) row.classList.remove('fade-out');
-            showAdminAlert('Lỗi khi xóa tác phẩm. Vui lòng thử lại.', 'danger');
-            console.error('deleteArtwork error:', error);
+            showAdminAlert('Lỗi khi xóa tác phẩm.', 'danger');
         });
 }
 
-/**
- * Toggle artwork approved/pending status
- * @param {string|number} id
- * @param {string} currentStatus - 'approved' or 'pending'
- */
 function toggleApproval(id, currentStatus) {
     var newStatus = currentStatus === 'approved' ? 'pending' : 'approved';
-
     API.updateArtwork(id, { status: newStatus })
-        .then(function () {
-            showAdminAlert('Đã cập nhật trạng thái duyệt!', 'info');
-            loadArtworks();
-        })
-        .catch(function (error) {
-            showAdminAlert('Lỗi khi cập nhật trạng thái.', 'danger');
-            console.error('toggleApproval error:', error);
-        });
+        .then(function () { showAdminAlert('Đã cập nhật trạng thái!', 'info'); loadArtworks(); })
+        .catch(function () { showAdminAlert('Lỗi khi cập nhật.', 'danger'); });
 }
 
-/**
- * Start editing an artwork — populate form with existing data
- * @param {string|number} id
- */
 function startEdit(id) {
-    var artwork = null;
-    for (var i = 0; i < adminArtworks.length; i++) {
-        if (String(adminArtworks[i].id) === String(id)) {
-            artwork = adminArtworks[i];
-            break;
-        }
-    }
-
+    var artwork = adminArtworks.find(a => String(a.id) === String(id));
     if (!artwork) return;
-
     editingId = id;
 
     document.getElementById('input-title').value = artwork.title || '';
     document.getElementById('input-artist').value = artwork.artist || '';
     document.getElementById('input-style').value = artwork.style || 'Sơn dầu';
     document.getElementById('input-story').value = artwork.story || '';
-
     document.getElementById('input-imageUrl').value = artwork.imageUrl || '';
     document.getElementById('input-approved').checked = (artwork.status === 'approved' || artwork.approved === true);
 
-    // Update form UI
-    document.getElementById('form-title').textContent = 'Chỉnh sửa tác phẩm';
+    document.getElementById('form-title').innerHTML = '<i class="bi bi-pencil-square text-warning"></i> Chỉnh sửa tác phẩm';
     document.getElementById('btn-submit').innerHTML = '<i class="bi bi-save me-1"></i> Cập nhật';
     document.getElementById('btn-cancel-edit').classList.remove('btn-cancel-edit-hidden');
-
-    // Scroll to form
     document.getElementById('artwork-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-/**
- * Reset the form back to "add" mode
- */
 function resetForm() {
     editingId = null;
     document.getElementById('artwork-form').reset();
-    document.getElementById('form-title').textContent = 'Thêm tác phẩm mới';
+    document.getElementById('form-title').innerHTML = '<i class="bi bi-plus-circle text-primary"></i> Thêm tác phẩm mới';
     document.getElementById('btn-submit').innerHTML = '<i class="bi bi-plus-circle me-1"></i> Thêm tác phẩm';
     document.getElementById('btn-cancel-edit').classList.add('btn-cancel-edit-hidden');
     clearErrors();
     setSubmitLoading(false);
 }
 
-/**
- * Update statistics cards
- * @param {Array} artworks
- */
-function updateStatistics(artworks) {
-    var total = artworks.length;
-    var approved = 0;
-    var pending = 0;
-    var totalLikes = 0;
-
-    for (var i = 0; i < artworks.length; i++) {
-        if (artworks[i].status === 'approved' || artworks[i].approved === true) {
-            approved++;
-        } else {
-            pending++;
-        }
-        totalLikes += (artworks[i].likes || 0);
-    }
-
-    var statTotal = document.getElementById('stat-total');
-    var statApproved = document.getElementById('stat-approved');
-    var statPending = document.getElementById('stat-pending');
-    var statLikes = document.getElementById('stat-likes');
-
-    if (statTotal) statTotal.textContent = total;
-    if (statApproved) statApproved.textContent = approved;
-    if (statPending) statPending.textContent = pending;
-    if (statLikes) statLikes.textContent = totalLikes.toLocaleString();
+/* ══════════════════════════════════════
+   SUBMISSIONS
+══════════════════════════════════════ */
+function loadSubmissions() {
+    var allSubs = submissions.getAll();
+    renderSubmissionsTable(allSubs);
+    updateSubmissionBadge(submissions.getPending().length);
 }
 
-/**
- * Toggle loading state on submit button
- * @param {boolean} loading
- */
+function renderSubmissionsTable(subs) {
+    var tbody = document.getElementById('submissions-tbody');
+    if (!tbody) return;
+
+    if (subs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-5">' +
+            '<i class="bi bi-inbox fs-3 d-block mb-2"></i>Chưa có yêu cầu nào</td></tr>';
+        return;
+    }
+
+    var html = '';
+    subs.forEach(function (sub) {
+        var imgUrl = getImageUrl(sub.imageUrl, sub.id);
+        var date = new Date(sub.submittedAt).toLocaleDateString('vi-VN');
+        var statusClass = { pending: 'warning', approved: 'success', rejected: 'danger' }[sub.status] || 'secondary';
+        var statusLabel = { pending: 'Chờ duyệt', approved: 'Đã duyệt', rejected: 'Từ chối' }[sub.status] || sub.status;
+
+        html += '<tr>';
+        html += '<td><img src="' + imgUrl + '" class="table-thumbnail" alt="" onerror="this.src=\'https://picsum.photos/seed/sub' + sub.id + '/80/80\'"></td>';
+        html += '<td class="fw-semibold">' + (sub.title || 'N/A') + '</td>';
+        html += '<td>' + (sub.artist || 'N/A') + '</td>';
+        html += '<td><span class="badge bg-secondary">' + (sub.style || '') + '</span></td>';
+        html += '<td><small>' + (sub.submittedBy ? sub.submittedBy.fullName + '<br><span class="text-muted">' + sub.submittedBy.email + '</span>' : 'Ẩn danh') + '</small></td>';
+        html += '<td><small>' + date + '</small></td>';
+        html += '<td><span class="badge bg-' + statusClass + '">' + statusLabel + '</span></td>';
+        html += '<td>';
+        if (sub.status === 'pending') {
+            html += '<button class="btn btn-sm btn-success me-1" onclick="approveSubmission(\'' + sub.id + '\')" title="Duyệt">' +
+                '<i class="bi bi-check-lg"></i> Duyệt</button>';
+            html += '<button class="btn btn-sm btn-outline-danger" onclick="rejectSubmission(\'' + sub.id + '\')" title="Từ chối">' +
+                '<i class="bi bi-x-lg"></i> Từ chối</button>';
+        } else if (sub.status === 'approved') {
+            html += '<span class="text-success"><i class="bi bi-check-circle-fill"></i> Đã duyệt</span>';
+        } else {
+            html += '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> Đã từ chối</span>';
+        }
+        html += '</td>';
+        html += '</tr>';
+    });
+    tbody.innerHTML = html;
+}
+
+function approveSubmission(id) {
+    var sub = submissions.getAll().find(s => s.id === id);
+    if (!sub) return;
+
+    if (!confirm('Duyệt và thêm tác phẩm "' + sub.title + '" vào gallery?')) return;
+
+    // Create artwork via API
+    var artworkData = {
+        title: sub.title,
+        artist: sub.artist,
+        style: sub.style,
+        story: sub.story,
+        imageUrl: sub.imageUrl,
+        likes: 0,
+        status: 'approved'
+    };
+
+    API.createArtwork(artworkData)
+        .then(function (created) {
+            submissions.updateStatus(id, 'approved');
+            showAdminAlert('Đã duyệt và thêm "' + created.title + '" vào gallery!', 'success');
+            loadSubmissions();
+            loadArtworks(); // Refresh artworks table too
+        })
+        .catch(function () {
+            showAdminAlert('Lỗi khi thêm tác phẩm vào gallery. Thử lại.', 'danger');
+        });
+}
+
+function rejectSubmission(id) {
+    var sub = submissions.getAll().find(s => s.id === id);
+    if (!sub) return;
+    if (!confirm('Từ chối yêu cầu "' + sub.title + '"?')) return;
+
+    submissions.updateStatus(id, 'rejected');
+    showAdminAlert('Đã từ chối yêu cầu "' + sub.title + '"', 'warning');
+    loadSubmissions();
+}
+
+function filterSubmissions(status) {
+    var all = submissions.getAll();
+    var filtered = status === 'all' ? all : submissions.getByStatus(status);
+    renderSubmissionsTable(filtered);
+
+    // Update filter button active state
+    document.querySelectorAll('.sub-filter-btn').forEach(btn => btn.classList.remove('active'));
+    var activeBtn = document.querySelector('.sub-filter-btn[data-status="' + status + '"]');
+    if (activeBtn) activeBtn.classList.add('active');
+}
+
+function updateSubmissionBadge(count) {
+    var badge = document.getElementById('submissions-badge');
+    if (badge) {
+        badge.textContent = count;
+        badge.style.display = count > 0 ? 'inline-block' : 'none';
+    }
+}
+
+/* ══════════════════════════════════════
+   STATISTICS
+══════════════════════════════════════ */
+function updateStatistics(artworks) {
+    var total = artworks.length;
+    var approved = artworks.filter(a => a.status === 'approved' || a.approved === true).length;
+    var pending = total - approved;
+    var totalLikes = artworks.reduce((sum, a) => sum + (a.likes || 0), 0);
+    var pendingSubs = submissions.getPending().length;
+
+    var set = function (id, val) { var el = document.getElementById(id); if (el) el.textContent = val; };
+    set('stat-total', total);
+    set('stat-approved', approved);
+    set('stat-pending', pending);
+    set('stat-likes', totalLikes.toLocaleString());
+    set('stat-submissions', pendingSubs);
+}
+
+/* ══════════════════════════════════════
+   UI HELPERS
+══════════════════════════════════════ */
 function setSubmitLoading(loading) {
     var btn = document.getElementById('btn-submit');
     if (!btn) return;
-
     if (loading) {
         btn.disabled = true;
         btn.setAttribute('data-original-text', btn.innerHTML);
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> Đang xử lý...';
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang xử lý...';
     } else {
         btn.disabled = false;
-        var original = btn.getAttribute('data-original-text');
-        if (original) {
-            btn.innerHTML = original;
-        }
+        var orig = btn.getAttribute('data-original-text');
+        if (orig) btn.innerHTML = orig;
     }
 }
 
-/**
- * Show or hide the table loading state
- * @param {boolean} show
- */
 function showTableLoading(show) {
     var loader = document.getElementById('table-loading');
     var tableContainer = document.getElementById('table-container');
     if (loader) loader.style.display = show ? 'block' : 'none';
-    if (tableContainer) {
-        if (show) {
-            tableContainer.classList.add('table-container-hidden');
-        } else {
-            tableContainer.classList.remove('table-container-hidden');
-        }
-    }
+    if (tableContainer) tableContainer.classList.toggle('table-container-hidden', show);
 }
 
-/**
- * Show an alert notification in the admin panel
- * @param {string} message
- * @param {string} type - Bootstrap alert type (success, danger, info, warning)
- */
 function showAdminAlert(message, type) {
     var container = document.getElementById('admin-alerts');
     if (!container) return;
-
     var alertEl = document.createElement('div');
     alertEl.className = 'alert alert-' + type + ' alert-dismissible fade show admin-alert';
     alertEl.setAttribute('role', 'alert');
     alertEl.innerHTML = '<i class="bi ' + getAlertIcon(type) + ' me-2"></i>' + message +
         '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
-
     container.appendChild(alertEl);
-
-    // Auto dismiss after 4 seconds
     setTimeout(function () {
         if (alertEl && alertEl.parentElement) {
             alertEl.classList.remove('show');
-            setTimeout(function () {
-                if (alertEl.parentElement) alertEl.remove();
-            }, 300);
+            setTimeout(function () { if (alertEl.parentElement) alertEl.remove(); }, 300);
         }
     }, 4000);
 }
 
-/**
- * Get the Bootstrap icon class for an alert type
- * @param {string} type
- * @returns {string}
- */
 function getAlertIcon(type) {
-    if (type === 'success') return 'bi-check-circle-fill';
-    if (type === 'danger') return 'bi-exclamation-triangle-fill';
-    if (type === 'info') return 'bi-info-circle-fill';
-    if (type === 'warning') return 'bi-exclamation-circle-fill';
-    return 'bi-info-circle-fill';
+    var map = { success: 'bi-check-circle-fill', danger: 'bi-exclamation-triangle-fill', info: 'bi-info-circle-fill', warning: 'bi-exclamation-circle-fill' };
+    return map[type] || 'bi-info-circle-fill';
 }
