@@ -1,177 +1,74 @@
-﻿/**
- * ArtGallery Authentication Manager
- * Handles user registration, login, logout, and session management
+/**
+ * Authentication System - ArtGallery
+ * Manages user registration, login, and authentication
  */
 
 class AuthManager {
     constructor() {
         this.currentUser = this.loadUser();
         this.currentAdmin = this.loadAdmin();
-        this.sessionTimeout = 24 * 60 * 60 * 1000; // 24 hours
-        this.loginAttempts = {};
-        this.maxLoginAttempts = 5;
-        this.lockoutDuration = 15 * 60 * 1000; // 15 minutes
-    }
-
-    /**
-     * Validate email format
-     */
-    validateEmail(email) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return emailRegex.test(email);
-    }
-
-    /**
-     * Validate password strength
-     */
-    validatePassword(password) {
-        if (password.length < 6) {
-            return { valid: false, message: 'Mật khẩu phải có ít nhất 6 ký tự' };
-        }
-        return { valid: true, message: 'Mật khẩu hợp lệ' };
-    }
-
-    /**
-     * Simple hash function (for demo only - use bcrypt in production)
-     */
-    hashPassword(password) {
-        let hash = 0;
-        if (password.length === 0) return hash.toString();
-        for (let i = 0; i < password.length; i++) {
-            const char = password.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash;
-        }
-        return hash.toString();
-    }
-
-    /**
-     * Verify password against hash
-     */
-    verifyPassword(password, hash) {
-        return this.hashPassword(password) === hash;
-    }
-
-    /**
-     * Check login attempts and lockout
-     */
-    checkLoginAttempts(identifier) {
-        const now = Date.now();
-        const attempts = this.loginAttempts[identifier] || { count: 0, lastAttempt: 0 };
-
-        // Reset if lockout period has passed
-        if (now - attempts.lastAttempt > this.lockoutDuration) {
-            this.loginAttempts[identifier] = { count: 0, lastAttempt: now };
-            return { allowed: true, message: '' };
-        }
-
-        if (attempts.count >= this.maxLoginAttempts) {
-            const remainingTime = Math.ceil((this.lockoutDuration - (now - attempts.lastAttempt)) / 60000);
-            return {
-                allowed: false,
-                message: `Quá nhiều lần thử. Vui lòng thử lại sau ${remainingTime} phút`
-            };
-        }
-
-        return { allowed: true, message: '' };
-    }
-
-    /**
-     * Record failed login attempt
-     */
-    recordFailedAttempt(identifier) {
-        const now = Date.now();
-        if (!this.loginAttempts[identifier]) {
-            this.loginAttempts[identifier] = { count: 0, lastAttempt: now };
-        }
-        this.loginAttempts[identifier].count++;
-        this.loginAttempts[identifier].lastAttempt = now;
-    }
-
-    /**
-     * Clear login attempts
-     */
-    clearLoginAttempts(identifier) {
-        delete this.loginAttempts[identifier];
     }
 
     /**
      * Register a new user
+     * @param {string} email
+     * @param {string} password
+     * @param {string} fullName
+     * @returns {object} {success: boolean, message: string}
      */
     registerUser(email, password, fullName) {
-        if (!email || !password || !fullName) {
-            return { success: false, message: 'Vui lòng điền đầy đủ thông tin' };
-        }
-
+        // Validation
         if (!this.validateEmail(email)) {
             return { success: false, message: 'Email không hợp lệ' };
         }
-
-        const passwordValidation = this.validatePassword(password);
-        if (!passwordValidation.valid) {
-            return { success: false, message: passwordValidation.message };
+        if (password.length < 6) {
+            return { success: false, message: 'Mật khẩu phải có ít nhất 6 ký tự' };
+        }
+        if (!fullName.trim()) {
+            return { success: false, message: 'Tên không được để trống' };
         }
 
-        const allUsers = this.getAllUsers();
-
-        if (allUsers.some(user => user.email === email)) {
+        // Check if user exists
+        const users = this.getAllUsers();
+        if (users.some(u => u.email === email)) {
             return { success: false, message: 'Email này đã được đăng ký' };
         }
 
+        // Create new user
         const newUser = {
             id: 'user_' + Date.now(),
             email: email,
             password: this.hashPassword(password),
             fullName: fullName,
-            registeredAt: new Date().toISOString(),
-            lastLogin: null
+            createdAt: new Date().toISOString(),
+            role: 'user'
         };
 
-        allUsers.push(newUser);
-        localStorage.setItem('artgallery_users', JSON.stringify(allUsers));
+        users.push(newUser);
+        localStorage.setItem('artgallery_users', JSON.stringify(users));
 
-        return { success: true, message: 'Đăng ký thành công! Vui lòng đăng nhập' };
+        return { success: true, message: 'Đăng ký thành công! Bạn có thể đăng nhập ngay.' };
     }
 
     /**
      * Login user
+     * @param {string} email
+     * @param {string} password
+     * @returns {object} {success: boolean, message: string, user?: object}
      */
     loginUser(email, password) {
-        if (!email || !password) {
-            return { success: false, message: 'Vui lòng điền email và mật khẩu' };
-        }
-
-        // Check login attempts
-        const attemptCheck = this.checkLoginAttempts(email);
-        if (!attemptCheck.allowed) {
-            return { success: false, message: attemptCheck.message };
-        }
-
-        const allUsers = this.getAllUsers();
-        const user = allUsers.find(u => u.email === email);
+        const users = this.getAllUsers();
+        const user = users.find(u => u.email === email);
 
         if (!user) {
-            this.recordFailedAttempt(email);
             return { success: false, message: 'Email hoặc mật khẩu không chính xác' };
         }
 
         if (!this.verifyPassword(password, user.password)) {
-            this.recordFailedAttempt(email);
             return { success: false, message: 'Email hoặc mật khẩu không chính xác' };
         }
 
-        // Clear login attempts on success
-        this.clearLoginAttempts(email);
-
-        // Update last login
-        user.lastLogin = new Date().toISOString();
-        const userIndex = allUsers.findIndex(u => u.id === user.id);
-        if (userIndex !== -1) {
-            allUsers[userIndex] = user;
-            localStorage.setItem('artgallery_users', JSON.stringify(allUsers));
-        }
-
-        // Create session
+        // Save session
         const userSession = {
             id: user.id,
             email: user.email,
@@ -188,19 +85,12 @@ class AuthManager {
 
     /**
      * Login admin
+     * @param {string} username
+     * @param {string} password
+     * @returns {object} {success: boolean, message: string, admin?: object}
      */
     loginAdmin(username, password) {
-        if (!username || !password) {
-            return { success: false, message: 'Vui lòng điền tên đăng nhập và mật khẩu' };
-        }
-
-        // Check login attempts
-        const attemptCheck = this.checkLoginAttempts('admin_' + username);
-        if (!attemptCheck.allowed) {
-            return { success: false, message: attemptCheck.message };
-        }
-
-        // Default admin credentials
+        // Default admin credentials (in production, use proper backend)
         const adminCredentials = {
             username: 'admin',
             password: this.hashPassword('admin123'),
@@ -208,14 +98,10 @@ class AuthManager {
         };
 
         if (username !== 'admin' || !this.verifyPassword(password, adminCredentials.password)) {
-            this.recordFailedAttempt('admin_' + username);
             return { success: false, message: 'Tên đăng nhập hoặc mật khẩu không chính xác' };
         }
 
-        // Clear login attempts on success
-        this.clearLoginAttempts('admin_' + username);
-
-        // Create admin session
+        // Save admin session
         const adminSession = {
             id: 'admin_001',
             username: username,
@@ -239,7 +125,7 @@ class AuthManager {
     }
 
     /**
-     * Logout admin
+     * Logout current admin
      */
     logoutAdmin() {
         localStorage.removeItem('artgallery_admin_session');
@@ -261,30 +147,6 @@ class AuthManager {
     }
 
     /**
-     * Get all users
-     */
-    getAllUsers() {
-        const users = localStorage.getItem('artgallery_users');
-        return users ? JSON.parse(users) : [];
-    }
-
-    /**
-     * Load user from localStorage
-     */
-    loadUser() {
-        const userSession = localStorage.getItem('artgallery_current_user');
-        return userSession ? JSON.parse(userSession) : null;
-    }
-
-    /**
-     * Load admin from localStorage
-     */
-    loadAdmin() {
-        const adminSession = localStorage.getItem('artgallery_admin_session');
-        return adminSession ? JSON.parse(adminSession) : null;
-    }
-
-    /**
      * Get current user
      */
     getCurrentUser() {
@@ -297,7 +159,72 @@ class AuthManager {
     getCurrentAdmin() {
         return this.currentAdmin;
     }
+
+    /**
+     * Load user from localStorage
+     */
+    loadUser() {
+        const userJson = localStorage.getItem('artgallery_current_user');
+        return userJson ? JSON.parse(userJson) : null;
+    }
+
+    /**
+     * Load admin from localStorage
+     */
+    loadAdmin() {
+        const adminJson = localStorage.getItem('artgallery_admin_session');
+        return adminJson ? JSON.parse(adminJson) : null;
+    }
+
+    /**
+     * Get all users from localStorage
+     */
+    getAllUsers() {
+        const usersJson = localStorage.getItem('artgallery_users');
+        return usersJson ? JSON.parse(usersJson) : [];
+    }
+
+    /**
+     * Simple password hashing (for demo - use bcrypt in production)
+     */
+    hashPassword(password) {
+        let hash = 0;
+        for (let i = 0; i < password.length; i++) {
+            const char = password.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+        return 'hash_' + Math.abs(hash).toString(36);
+    }
+
+    /**
+     * Verify password
+     */
+    verifyPassword(password, hash) {
+        return this.hashPassword(password) === hash;
+    }
+
+    /**
+     * Validate email format
+     */
+    validateEmail(email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    }
+
+    /**
+     * Initialize default admin if not exists
+     */
+    initializeDefaultAdmin() {
+        const defaultAdmin = {
+            username: 'admin',
+            password: this.hashPassword('admin123'),
+            fullName: 'Administrator'
+        };
+        localStorage.setItem('artgallery_admin_creds', JSON.stringify(defaultAdmin));
+    }
 }
 
-// Create global auth instance
+// Initialize auth manager
 const auth = new AuthManager();
+auth.initializeDefaultAdmin();
