@@ -1,384 +1,293 @@
 /**
- * collections.js — ArtGallery
- * Quản lý bộ sưu tập cá nhân của người dùng
+ * collections.js — Quản lý Bộ Sưu Tập & Yêu Cầu Đăng Tác Phẩm
  *
- * Cấu trúc lưu trong localStorage:
- * artgallery_collections_{userId} = {
- *   folders: [{ id, name, createdAt }],
- *   items:   [{ artworkId, folderId, addedAt, artworkData }]
- * }
+ * CollectionManager  : Cho phép người dùng tạo thư mục cá nhân và lưu tác phẩm yêu thích
+ * SubmissionManager  : Cho phép người dùng gửi yêu cầu đăng tác phẩm để admin duyệt
+ *
+ * Tất cả dữ liệu lưu trong localStorage (phù hợp demo front-end)
  */
 
-const collections = {
-    /* ── Helpers ── */
-
-    _key() {
-        const user = auth.getCurrentUser();
-        return user ? `artgallery_collections_${user.id}` : null;
-    },
-
-    _load() {
-        const key = this._key();
-        if (!key) return { folders: [], items: [] };
-        const raw = localStorage.getItem(key);
-        return raw ? JSON.parse(raw) : { folders: [], items: [] };
-    },
-
-    _save(data) {
-        const key = this._key();
-        if (!key) return;
-        localStorage.setItem(key, JSON.stringify(data));
-    },
-
-    /* ── Folders ── */
-
-    getFolders() {
-        return this._load().folders;
-    },
-
-    createFolder(name) {
-        if (!name || !name.trim()) return null;
-        const data = this._load();
-        const folder = { id: slugId(), name: name.trim(), createdAt: new Date().toISOString() };
-        data.folders.push(folder);
-        this._save(data);
-        return folder;
-    },
-
-    deleteFolder(folderId) {
-        const data = this._load();
-        data.folders = data.folders.filter(f => f.id !== folderId);
-        data.items   = data.items.filter(i => i.folderId !== folderId);
-        this._save(data);
-    },
-
-    /* ── Items ── */
-
-    getItems(folderId = null) {
-        const items = this._load().items;
-        return folderId ? items.filter(i => i.folderId === folderId) : items;
-    },
-
-    isInFolder(artworkId, folderId) {
-        return this._load().items.some(i => i.artworkId == artworkId && i.folderId === folderId);
-    },
-
-    isBookmarked(artworkId) {
-        return this._load().items.some(i => i.artworkId == artworkId);
-    },
-
-    addItem(artworkId, folderId, artworkData) {
-        const data = this._load();
-        if (data.items.some(i => i.artworkId == artworkId && i.folderId === folderId)) return false;
-        data.items.push({ artworkId: String(artworkId), folderId, addedAt: new Date().toISOString(), artworkData });
-        this._save(data);
-        return true;
-    },
-
-    removeItem(artworkId, folderId) {
-        const data = this._load();
-        data.items = data.items.filter(i => !(i.artworkId == artworkId && i.folderId === folderId));
-        this._save(data);
-    },
-
-    removeFromAll(artworkId) {
-        const data = this._load();
-        data.items = data.items.filter(i => i.artworkId != artworkId);
-        this._save(data);
-    },
-
-    totalCount() {
-        return new Set(this._load().items.map(i => i.artworkId)).size;
-    },
-
-    folderCount(folderId) {
-        return this._load().items.filter(i => i.folderId === folderId).length;
-    }
-};
-
-/* ══════════════════════════════════════════════════
-   Collection Picker Popover (hiện khi click bookmark)
-══════════════════════════════════════════════════ */
-
-let _activePicker = null;
-
-function openCollectionPicker(btn, artworkId, artworkData) {
-    if (!auth.isUserLoggedIn()) {
-        showToast('Vui lòng đăng nhập để lưu tác phẩm', 'warning');
-        setTimeout(() => window.location.href = 'login.html', 1200);
-        return;
+/* ══════════════════════════════════════
+   COLLECTION MANAGER — Bộ sưu tập cá nhân
+══════════════════════════════════════ */
+class CollectionManager {
+    constructor() {
+        // Key dùng để lưu toàn bộ dữ liệu collections vào localStorage
+        this.storageKey = 'artgallery_collections';
     }
 
-    // Đóng picker đang mở nếu cùng artwork
-    if (_activePicker) {
-        _activePicker.remove();
-        _activePicker = null;
-        if (_activePicker === null && document.querySelector(`[data-artwork-id="${artworkId}"].collection-picker`)) return;
+    /**
+     * Lấy tất cả thư mục của một người dùng
+     * Cấu trúc dữ liệu trả về: { "Yêu thích": ["1","3","7"], "Cần xem": ["2"] }
+     *
+     * @param {string} userId - ID người dùng hiện tại
+     * @returns {Object} Object các thư mục { folderName: [artworkId, ...] }
+     */
+    getUserCollections(userId) {
+        // Lấy toàn bộ data, rồi trích phần của userId cụ thể
+        // Nếu user chưa có thư mục nào → trả về {} tránh lỗi undefined
+        return this._getAll()[userId] || {};
     }
 
-    const folders = collections.getFolders();
-    const picker = document.createElement('div');
-    picker.className = 'collection-picker';
-    picker.dataset.artworkId = artworkId;
+    /**
+     * Tạo thư mục mới cho người dùng
+     *
+     * @param {string} userId - ID người dùng
+     * @param {string} name   - Tên thư mục mới (không được để trống hoặc trùng)
+     * @returns {{ success: boolean, message: string }}
+     */
+    createCollection(userId, name) {
+        const trimmed = (name || '').trim();
 
-    picker.innerHTML = `
-        <div class="cp-header">
-            <span><i class="bi bi-bookmark-plus me-1"></i> Lưu vào thư mục</span>
-            <button class="cp-close" onclick="this.closest('.collection-picker').remove()"><i class="bi bi-x"></i></button>
-        </div>
-        <div class="cp-folders" id="cp-folders-${artworkId}">
-            ${folders.length === 0
-                ? `<p class="cp-empty">Chưa có thư mục nào. Tạo thư mục bên dưới!</p>`
-                : folders.map(f => {
-                    const inFolder = collections.isInFolder(artworkId, f.id);
-                    return `<button class="cp-folder-btn ${inFolder ? 'in-folder' : ''}"
-                                onclick="toggleCollectionItem('${artworkId}','${f.id}',this)"
-                                data-folder-id="${f.id}">
-                                <i class="bi bi-folder${inFolder ? '-fill' : ''} me-1"></i>
-                                ${escapeHtml(f.name)}
-                                ${inFolder ? '<i class="bi bi-check2 ms-auto"></i>' : ''}
-                            </button>`;
-                  }).join('')}
-        </div>
-        <div class="cp-create">
-            <input type="text" class="cp-input" id="cp-input-${artworkId}" placeholder="Tên thư mục mới..." maxlength="40">
-            <button class="cp-create-btn" onclick="cpCreateFolder('${artworkId}')" title="Tạo thư mục mới">+</button>
-        </div>
-    `;
+        // Không cho phép tên rỗng hoặc chỉ toàn khoảng trắng
+        if (!trimmed) return { success: false, message: 'Tên thư mục không được để trống' };
 
-    // Lưu artworkData vào picker để dùng khi thêm vào folder mới
-    picker._artworkData = artworkData;
+        const all = this._getAll();
 
-    // Vị trí
-    const rect = btn.getBoundingClientRect();
-    picker.style.position = 'fixed';
-    picker.style.top = (rect.bottom + 6) + 'px';
-    picker.style.left = Math.max(8, rect.right - 220) + 'px';
+        // Khởi tạo object rỗng cho user nếu chưa có dữ liệu
+        if (!all[userId]) all[userId] = {};
 
-    document.body.appendChild(picker);
-    _activePicker = picker;
+        // Kiểm tra trùng tên — mỗi user không được có 2 thư mục cùng tên
+        if (all[userId][trimmed]) {
+            return { success: false, message: 'Thư mục "' + trimmed + '" đã tồn tại' };
+        }
 
-    // Đóng khi click ngoài
-    setTimeout(() => {
-        document.addEventListener('click', function handler(e) {
-            if (!picker.contains(e.target) && e.target !== btn) {
-                picker.remove();
-                if (_activePicker === picker) _activePicker = null;
-                document.removeEventListener('click', handler);
-            }
-        });
-    }, 10);
-
-    // Enter để tạo folder
-    const inp = document.getElementById(`cp-input-${artworkId}`);
-    if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') cpCreateFolder(artworkId); });
-}
-
-function toggleCollectionItem(artworkId, folderId, btn) {
-    const picker = btn.closest('.collection-picker');
-    const artworkData = picker ? picker._artworkData : {};
-    const inFolder = collections.isInFolder(artworkId, folderId);
-
-    if (inFolder) {
-        collections.removeItem(artworkId, folderId);
-        showToast('Đã xóa khỏi bộ sưu tập', 'info');
-    } else {
-        collections.addItem(artworkId, folderId, artworkData);
-        showToast('Đã lưu vào bộ sưu tập ✨', 'success');
+        // Tạo thư mục mới với mảng ID rỗng
+        all[userId][trimmed] = [];
+        this._save(all);
+        return { success: true, message: 'Đã tạo thư mục "' + trimmed + '"' };
     }
 
-    // Cập nhật trạng thái bookmark button trên card
-    updateBookmarkBtn(artworkId);
+    /**
+     * Thêm một tác phẩm vào thư mục
+     *
+     * @param {string}       userId     - ID người dùng
+     * @param {string}       folderName - Tên thư mục đích
+     * @param {string|number} artworkId - ID tác phẩm cần thêm
+     * @returns {{ success: boolean, message: string }}
+     */
+    addToCollection(userId, folderName, artworkId) {
+        const all = this._getAll();
 
-    // Rebuild folder list trong picker
-    const folders = collections.getFolders();
-    const container = document.getElementById(`cp-folders-${artworkId}`);
-    if (container) {
-        container.innerHTML = folders.map(f => {
-            const inf = collections.isInFolder(artworkId, f.id);
-            return `<button class="cp-folder-btn ${inf ? 'in-folder' : ''}"
-                        onclick="toggleCollectionItem('${artworkId}','${f.id}',this)"
-                        data-folder-id="${f.id}">
-                        <i class="bi bi-folder${inf ? '-fill' : ''} me-1"></i>
-                        ${escapeHtml(f.name)}
-                        ${inf ? '<i class="bi bi-check2 ms-auto"></i>' : ''}
-                    </button>`;
-        }).join('');
-    }
-}
+        // Đảm bảo user và folder tồn tại trước khi thêm
+        if (!all[userId]) all[userId] = {};
+        if (!all[userId][folderName]) all[userId][folderName] = [];
 
-function cpCreateFolder(artworkId) {
-    const inp = document.getElementById(`cp-input-${artworkId}`);
-    const name = inp ? inp.value.trim() : '';
-    if (!name) { showToast('Vui lòng nhập tên thư mục', 'warning'); return; }
+        const folder = all[userId][folderName];
+        const sid    = String(artworkId); // Đồng nhất kiểu dữ liệu về string để so sánh
 
-    const folder = collections.createFolder(name);
-    if (!folder) return;
-    if (inp) inp.value = '';
+        // Tránh thêm trùng tác phẩm vào cùng một thư mục
+        if (folder.includes(sid)) {
+            return { success: false, message: 'Tác phẩm đã có trong thư mục này' };
+        }
 
-    // Tự động thêm artwork vào folder vừa tạo
-    const picker = inp ? inp.closest('.collection-picker') : null;
-    const artworkData = picker ? picker._artworkData : {};
-    collections.addItem(artworkId, folder.id, artworkData);
-    updateBookmarkBtn(artworkId);
-    showToast(`Đã tạo thư mục "${folder.name}" và lưu tác phẩm ✨`, 'success');
-
-    // Rebuild list
-    const container = document.getElementById(`cp-folders-${artworkId}`);
-    if (container) {
-        const folders = collections.getFolders();
-        container.innerHTML = folders.map(f => {
-            const inf = collections.isInFolder(artworkId, f.id);
-            return `<button class="cp-folder-btn ${inf ? 'in-folder' : ''}"
-                        onclick="toggleCollectionItem('${artworkId}','${f.id}',this)"
-                        data-folder-id="${f.id}">
-                        <i class="bi bi-folder${inf ? '-fill' : ''} me-1"></i>
-                        ${escapeHtml(f.name)}
-                        ${inf ? '<i class="bi bi-check2 ms-auto"></i>' : ''}
-                    </button>`;
-        }).join('');
-    }
-}
-
-function updateBookmarkBtn(artworkId) {
-    const btn = document.querySelector(`.btn-bookmark[data-id="${artworkId}"]`);
-    if (!btn) return;
-    const saved = collections.isBookmarked(artworkId);
-    btn.classList.toggle('bookmarked', saved);
-    btn.querySelector('i').className = `bi bi-bookmark${saved ? '-fill' : ''}`;
-}
-
-/* ══════════════════════════════════════════════════
-   My Collections Modal
-══════════════════════════════════════════════════ */
-
-let _activeFolderId = null;
-
-function openMyCollectionsModal() {
-    if (!auth.isUserLoggedIn()) {
-        showToast('Vui lòng đăng nhập để xem bộ sưu tập', 'warning');
-        setTimeout(() => window.location.href = 'login.html', 1200);
-        return;
-    }
-    renderCollectionsModal();
-    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('collectionsModal'));
-    modal.show();
-}
-
-function renderCollectionsModal() {
-    const folders = collections.getFolders();
-    const total = collections.totalCount();
-
-    // Badge tổng
-    const badge = document.getElementById('cm-total-badge');
-    if (badge) badge.textContent = total;
-
-    // Sidebar folders
-    const list = document.getElementById('cm-folders-list');
-    if (!list) return;
-
-    if (folders.length === 0) {
-        list.innerHTML = `<p style="font-size:.8rem;color:#475569;text-align:center;padding:.5rem">Chưa có thư mục nào</p>`;
-        document.getElementById('cm-folder-content').innerHTML = `
-            <div class="cm-empty">
-                <i class="bi bi-bookmark-star"></i>
-                <p>Tạo thư mục đầu tiên để lưu tác phẩm yêu thích.</p>
-            </div>`;
-        return;
+        folder.push(sid);
+        this._save(all);
+        return { success: true, message: 'Đã thêm vào "' + folderName + '"' };
     }
 
-    list.innerHTML = folders.map(f => {
-        const cnt = collections.folderCount(f.id);
-        const isActive = f.id === _activeFolderId;
-        return `<button class="cm-folder-item ${isActive ? 'active' : ''}" onclick="selectCollectionFolder('${f.id}')">
-                    <i class="bi bi-folder${isActive ? '-fill' : ''} me-1"></i>
-                    <span class="cm-folder-name">${escapeHtml(f.name)}</span>
-                    <span class="cm-folder-count">${cnt}</span>
-                    <button class="cm-del-folder" onclick="deleteCollectionFolder(event,'${f.id}')" title="Xóa thư mục">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </button>`;
-    }).join('');
+    /**
+     * Xóa một tác phẩm khỏi thư mục (tác phẩm vẫn còn trong gallery)
+     *
+     * @param {string}       userId     - ID người dùng
+     * @param {string}       folderName - Tên thư mục
+     * @param {string|number} artworkId - ID tác phẩm cần xóa khỏi thư mục
+     * @returns {{ success: boolean }}
+     */
+    removeFromCollection(userId, folderName, artworkId) {
+        const all = this._getAll();
 
-    // Nếu đang có folder đang chọn, render content
-    if (_activeFolderId) {
-        renderFolderContent(_activeFolderId);
-    } else {
-        // Tự động chọn folder đầu tiên
-        if (folders.length > 0) {
-            _activeFolderId = folders[0].id;
-            renderCollectionsModal();
+        // Không làm gì nếu user hoặc folder không tồn tại
+        if (!all[userId] || !all[userId][folderName]) return { success: false };
+
+        // Lọc bỏ artworkId khỏi mảng (tạo mảng mới không chứa ID đó)
+        all[userId][folderName] = all[userId][folderName]
+            .filter(id => id !== String(artworkId));
+
+        this._save(all);
+        return { success: true };
+    }
+
+    /**
+     * Xóa hoàn toàn một thư mục (cùng toàn bộ tác phẩm đã lưu trong đó)
+     *
+     * @param {string} userId - ID người dùng
+     * @param {string} name   - Tên thư mục cần xóa
+     * @returns {{ success: boolean, message?: string }}
+     */
+    deleteCollection(userId, name) {
+        const all = this._getAll();
+
+        // Không làm gì nếu thư mục không tồn tại
+        if (!all[userId] || !all[userId][name]) return { success: false };
+
+        // Xóa key thư mục khỏi object của user
+        delete all[userId][name];
+        this._save(all);
+        return { success: true, message: 'Đã xóa thư mục "' + name + '"' };
+    }
+
+    /**
+     * Kiểm tra xem tác phẩm có được lưu trong ít nhất một thư mục nào không
+     * Dùng để hiển thị icon bookmark đã tô màu trên card gallery
+     *
+     * @param {string}       userId    - ID người dùng
+     * @param {string|number} artworkId - ID tác phẩm
+     * @returns {boolean}
+     */
+    isInAnyCollection(userId, artworkId) {
+        const cols = this.getUserCollections(userId);
+        // Object.values lấy mảng các mảng ID, .some kiểm tra ít nhất 1 thư mục chứa
+        return Object.values(cols).some(ids => ids.includes(String(artworkId)));
+    }
+
+    /**
+     * Kiểm tra tác phẩm có trong thư mục cụ thể không
+     * Dùng trong collection picker để hiển thị trạng thái từng thư mục
+     *
+     * @param {string}       userId     - ID người dùng
+     * @param {string}       folderName - Tên thư mục
+     * @param {string|number} artworkId - ID tác phẩm
+     * @returns {boolean}
+     */
+    isInCollection(userId, folderName, artworkId) {
+        const cols = this.getUserCollections(userId);
+        return !!(cols[folderName] && cols[folderName].includes(String(artworkId)));
+    }
+
+    /**
+     * Đếm tổng số tác phẩm duy nhất đã lưu (không đếm trùng nếu ở nhiều thư mục)
+     * Dùng để hiển thị badge tổng số trên modal bộ sưu tập
+     *
+     * @param {string} userId - ID người dùng
+     * @returns {number}
+     */
+    getTotalSaved(userId) {
+        const cols = this.getUserCollections(userId);
+        const ids  = new Set(); // Set tự loại bỏ trùng lặp
+        Object.values(cols).forEach(arr => arr.forEach(id => ids.add(id)));
+        return ids.size;
+    }
+
+    // ─── PRIVATE: Đọc/ghi localStorage ───────────────────────
+
+    /** @private Đọc toàn bộ dữ liệu collections từ localStorage */
+    _getAll() {
+        try {
+            return JSON.parse(localStorage.getItem(this.storageKey)) || {};
+        } catch {
+            // JSON bị lỗi (hiếm gặp) → trả về object rỗng thay vì crash
+            return {};
         }
     }
+
+    /** @private Ghi toàn bộ dữ liệu collections vào localStorage */
+    _save(data) {
+        localStorage.setItem(this.storageKey, JSON.stringify(data));
+    }
 }
 
-function selectCollectionFolder(folderId) {
-    _activeFolderId = folderId;
-    renderCollectionsModal();
-}
 
-function renderFolderContent(folderId) {
-    const content = document.getElementById('cm-folder-content');
-    if (!content) return;
-    const items = collections.getItems(folderId);
-
-    if (items.length === 0) {
-        content.innerHTML = `
-            <div class="cm-empty">
-                <i class="bi bi-image"></i>
-                <p>Thư mục này chưa có tác phẩm nào.<br>
-                   <span style="font-size:.8rem;color:#475569">Nhấn nút <i class="bi bi-bookmark"></i> trên tác phẩm để lưu vào đây.</span>
-                </p>
-            </div>`;
-        return;
+/* ══════════════════════════════════════
+   SUBMISSION MANAGER — Yêu cầu đăng tác phẩm
+══════════════════════════════════════ */
+class SubmissionManager {
+    constructor() {
+        // Key riêng để lưu danh sách yêu cầu trong localStorage
+        this.storageKey = 'artgallery_submissions';
     }
 
-    content.innerHTML = `<div class="cm-grid">${items.map(item => {
-        const a = item.artworkData || {};
-        return `<div class="cm-card" onclick="openArtworkDetailById('${item.artworkId}')">
-                    <img src="${escapeHtml(a.imageUrl || '')}" alt="${escapeHtml(a.title || '')}" loading="lazy"
-                         onerror="this.src='https://via.placeholder.com/200x270?text=No+Image'">
-                    <div class="cm-card-info">
-                        <div class="cm-card-title">${escapeHtml(a.title || 'Không rõ')}</div>
-                        <div class="cm-card-artist">${escapeHtml(a.artist || '')}</div>
-                    </div>
-                    <button class="cm-remove-btn" onclick="removeFromCollectionModal(event,'${item.artworkId}','${folderId}')" title="Xóa khỏi thư mục">
-                        <i class="bi bi-x"></i>
-                    </button>
-                </div>`;
-    }).join('')}</div>`;
+    /**
+     * Gửi yêu cầu đăng tác phẩm mới (từ người dùng đã đăng nhập)
+     * Trạng thái ban đầu: 'pending' (chờ admin duyệt)
+     *
+     * @param {Object} data - Thông tin tác phẩm:
+     *   { title, artist, style, story, imageUrl, submittedBy }
+     *   submittedBy: { id, email, fullName } của người gửi
+     * @returns {{ success: boolean, message: string, submission?: Object }}
+     */
+    submit(data) {
+        // Các trường bắt buộc: tiêu đề, nghệ sĩ, URL ảnh
+        if (!data.title || !data.artist || !data.imageUrl) {
+            return { success: false, message: 'Vui lòng điền đầy đủ thông tin bắt buộc' };
+        }
+
+        const all = this._getAll();
+
+        // Tạo object yêu cầu với ID duy nhất dựa trên timestamp
+        const submission = {
+            id:          'sub_' + Date.now(),
+            title:       data.title.trim(),
+            artist:      data.artist.trim(),
+            style:       data.style || 'Sơn dầu',
+            story:       (data.story || '').trim(),
+            imageUrl:    data.imageUrl.trim(),
+            submittedBy: data.submittedBy || null, // Thông tin người gửi (có thể null nếu ẩn danh)
+            submittedAt: new Date().toISOString(),
+            status:      'pending'  // Trạng thái: pending | approved | rejected
+        };
+
+        all.push(submission);
+        this._save(all);
+        return {
+            success: true,
+            message: 'Đã gửi yêu cầu! Admin sẽ duyệt trong thời gian sớm nhất.',
+            submission
+        };
+    }
+
+    /** @returns {Array} Toàn bộ yêu cầu (mọi trạng thái) */
+    getAll() { return this._getAll(); }
+
+    /** @returns {Array} Chỉ các yêu cầu đang chờ duyệt */
+    getPending() { return this._getAll().filter(s => s.status === 'pending'); }
+
+    /**
+     * Lọc yêu cầu theo trạng thái
+     * @param {string} status - 'pending' | 'approved' | 'rejected'
+     * @returns {Array}
+     */
+    getByStatus(status) { return this._getAll().filter(s => s.status === status); }
+
+    /**
+     * Admin cập nhật trạng thái yêu cầu (duyệt hoặc từ chối)
+     *
+     * @param {string} id     - ID yêu cầu cần cập nhật
+     * @param {string} status - Trạng thái mới: 'approved' | 'rejected'
+     * @returns {{ success: boolean, submission?: Object, message?: string }}
+     */
+    updateStatus(id, status) {
+        const all = this._getAll();
+        const idx = all.findIndex(s => s.id === id);
+
+        // Không tìm thấy yêu cầu theo ID
+        if (idx === -1) return { success: false, message: 'Không tìm thấy yêu cầu' };
+
+        // Cập nhật trạng thái và ghi thêm thời điểm duyệt
+        all[idx].status     = status;
+        all[idx].reviewedAt = new Date().toISOString();
+        this._save(all);
+
+        return { success: true, submission: all[idx] };
+    }
+
+    // ─── PRIVATE ─────────────────────────────────────────────
+
+    /** @private */
+    _getAll() {
+        try {
+            return JSON.parse(localStorage.getItem(this.storageKey)) || [];
+        } catch {
+            return [];
+        }
+    }
+
+    /** @private */
+    _save(data) {
+        localStorage.setItem(this.storageKey, JSON.stringify(data));
+    }
 }
 
-function removeFromCollectionModal(e, artworkId, folderId) {
-    e.stopPropagation();
-    collections.removeItem(artworkId, folderId);
-    updateBookmarkBtn(artworkId);
-    renderCollectionsModal();
-    showToast('Đã xóa khỏi bộ sưu tập', 'info');
-}
-
-function deleteCollectionFolder(e, folderId) {
-    e.stopPropagation();
-    if (!confirm('Xóa thư mục này sẽ xóa tất cả tác phẩm trong đó. Tiếp tục?')) return;
-    collections.deleteFolder(folderId);
-    if (_activeFolderId === folderId) _activeFolderId = null;
-    // Update all bookmark buttons
-    document.querySelectorAll('.btn-bookmark').forEach(btn => {
-        const id = btn.dataset.id;
-        if (id) updateBookmarkBtn(id);
-    });
-    renderCollectionsModal();
-    showToast('Đã xóa thư mục', 'info');
-}
-
-function createCollectionFromModal() {
-    const inp = document.getElementById('cm-new-folder-input');
-    const name = inp ? inp.value.trim() : '';
-    if (!name) { showToast('Vui lòng nhập tên thư mục', 'warning'); return; }
-    const folder = collections.createFolder(name);
-    if (!folder) return;
-    if (inp) inp.value = '';
-    _activeFolderId = folder.id;
-    renderCollectionsModal();
-    showToast(`Đã tạo thư mục "${folder.name}"`, 'success');
-}
+// Tạo instance toàn cục để dùng chung ở mọi trang
+const collections = new CollectionManager();
+const submissions  = new SubmissionManager();
