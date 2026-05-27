@@ -1,41 +1,50 @@
 /**
- * api.js — Centralized API Module
- * All MockAPI fetch calls (GET/POST/PUT/DELETE)
- * Assigned to window.API for global access
+ * api.js — Module gọi API trung tâm
+ * Tập trung toàn bộ các lệnh gọi MockAPI (GET/POST/PUT/DELETE)
+ * Gắn vào window.API để dùng chung toàn bộ ứng dụng
  */
 
+// Địa chỉ gốc của API (MockAPI endpoint)
 const API_BASE = 'https://69fa35c8c509a40d3aa4125a.mockapi.io/api/v1';
 
+// Gán object API vào window để các file JS khác (main.js, admin.js) có thể gọi
 window.API = {
 
     /**
-     * GET /ArtGallery — Fetch all artworks
-     * @returns {Promise<Array>} Array of artwork objects
+     * Lấy danh sách tất cả tác phẩm
+     * Phương thức: GET /ArtGallery
+     * @returns {Promise<Array>} Mảng các object tác phẩm
      */
     getArtworks: function () {
+        // Gọi fetch đến endpoint danh sách tác phẩm
         return fetch(API_BASE + '/ArtGallery')
             .then(function (response) {
+                // Nếu server trả về lỗi HTTP (4xx, 5xx), ném lỗi để .catch bắt
                 if (!response.ok) {
-                    throw new Error('Failed to fetch artworks: ' + response.status);
+                    throw new Error('Lỗi tải danh sách tác phẩm: ' + response.status);
                 }
+                // Chuyển body JSON thành object JavaScript
                 return response.json();
             })
             .catch(function (error) {
+                // Ghi lỗi ra console để dễ debug
                 console.error('API.getArtworks error:', error);
+                // Ném lại để caller biết có lỗi và xử lý (hiển thị thông báo...)
                 throw error;
             });
     },
 
     /**
-     * GET /ArtGallery/:id — Fetch a single artwork
-     * @param {string|number} id
-     * @returns {Promise<Object>}
+     * Lấy thông tin một tác phẩm theo ID
+     * Phương thức: GET /ArtGallery/:id
+     * @param {string|number} id - ID của tác phẩm cần lấy
+     * @returns {Promise<Object>} Object tác phẩm
      */
     getArtwork: function (id) {
         return fetch(API_BASE + '/ArtGallery/' + id)
             .then(function (response) {
                 if (!response.ok) {
-                    throw new Error('Failed to fetch artwork ' + id + ': ' + response.status);
+                    throw new Error('Lỗi tải tác phẩm ' + id + ': ' + response.status);
                 }
                 return response.json();
             })
@@ -46,19 +55,22 @@ window.API = {
     },
 
     /**
-     * POST /ArtGallery — Create a new artwork
-     * @param {Object} data - Artwork data
-     * @returns {Promise<Object>} Created artwork
+     * Tạo mới một tác phẩm
+     * Phương thức: POST /ArtGallery
+     * @param {Object} data - Dữ liệu tác phẩm cần tạo (title, artist, style, ...)
+     * @returns {Promise<Object>} Object tác phẩm vừa được tạo (có ID do server cấp)
      */
     createArtwork: function (data) {
         return fetch(API_BASE + '/ArtGallery', {
             method: 'POST',
+            // Báo cho server biết body là JSON
             headers: { 'Content-Type': 'application/json' },
+            // Chuyển object JS thành chuỗi JSON để gửi lên server
             body: JSON.stringify(data)
         })
             .then(function (response) {
                 if (!response.ok) {
-                    throw new Error('Failed to create artwork: ' + response.status);
+                    throw new Error('Lỗi tạo tác phẩm: ' + response.status);
                 }
                 return response.json();
             })
@@ -69,10 +81,11 @@ window.API = {
     },
 
     /**
-     * PUT /ArtGallery/:id — Update an existing artwork
-     * @param {string|number} id
-     * @param {Object} data - Updated fields
-     * @returns {Promise<Object>} Updated artwork
+     * Cập nhật thông tin một tác phẩm đã có
+     * Phương thức: PUT /ArtGallery/:id
+     * @param {string|number} id - ID tác phẩm cần cập nhật
+     * @param {Object} data - Các trường cần cập nhật (không cần gửi toàn bộ)
+     * @returns {Promise<Object>} Object tác phẩm sau khi cập nhật
      */
     updateArtwork: function (id, data) {
         return fetch(API_BASE + '/ArtGallery/' + id, {
@@ -82,7 +95,7 @@ window.API = {
         })
             .then(function (response) {
                 if (!response.ok) {
-                    throw new Error('Failed to update artwork ' + id + ': ' + response.status);
+                    throw new Error('Lỗi cập nhật tác phẩm ' + id + ': ' + response.status);
                 }
                 return response.json();
             })
@@ -93,9 +106,10 @@ window.API = {
     },
 
     /**
-     * DELETE /ArtGallery/:id — Delete an artwork
-     * @param {string|number} id
-     * @returns {Promise<Object>}
+     * Xóa một tác phẩm theo ID
+     * Phương thức: DELETE /ArtGallery/:id
+     * @param {string|number} id - ID tác phẩm cần xóa
+     * @returns {Promise<Object>} Object xác nhận từ server
      */
     deleteArtwork: function (id) {
         return fetch(API_BASE + '/ArtGallery/' + id, {
@@ -103,7 +117,7 @@ window.API = {
         })
             .then(function (response) {
                 if (!response.ok) {
-                    throw new Error('Failed to delete artwork ' + id + ': ' + response.status);
+                    throw new Error('Lỗi xóa tác phẩm ' + id + ': ' + response.status);
                 }
                 return response.json();
             })
@@ -114,14 +128,15 @@ window.API = {
     },
 
     /**
-     * GET /artists — Fetch all artists
-     * @returns {Promise<Array>}
+     * Lấy danh sách nghệ sĩ (endpoint phụ)
+     * Phương thức: GET /artists
+     * @returns {Promise<Array>} Mảng các object nghệ sĩ
      */
     getArtists: function () {
         return fetch(API_BASE + '/artists')
             .then(function (response) {
                 if (!response.ok) {
-                    throw new Error('Failed to fetch artists: ' + response.status);
+                    throw new Error('Lỗi tải danh sách nghệ sĩ: ' + response.status);
                 }
                 return response.json();
             })
